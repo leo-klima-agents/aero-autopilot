@@ -44,11 +44,57 @@ export interface RawDataset {
   epochs: RawEpochRow[];
 }
 
-export function makeClient(rpcUrl: string) {
-  return createPublicClient({ chain: base, transport: http(rpcUrl, { batch: true }) });
+export interface ClientOptions {
+  /**
+   * JSON-RPC array batching. OFF by default: several providers/gateways hang
+   * on array-wrapped requests (observed as a timeout on the very first
+   * eth_call), and the heavy reads already aggregate via the multicall
+   * contract, so transport batching buys little. Opt in with --batch on a
+   * provider known to support it.
+   */
+  batch?: boolean;
+  /** Per-request timeout, ms (default 30s — epoch-boundary getLogs can be slow). */
+  timeoutMs?: number;
+}
+
+export function makeClient(rpcUrl: string, opts: ClientOptions = {}) {
+  return createPublicClient({
+    chain: base,
+    transport: http(rpcUrl, {
+      batch: opts.batch ?? false,
+      timeout: opts.timeoutMs ?? 30_000,
+      retryCount: 5,
+      retryDelay: 500,
+    }),
+  });
 }
 
 export type IndexerClient = ReturnType<typeof makeClient>;
+
+/**
+ * Fail fast, loudly, and with a diagnosis BEFORE the long crawl starts: a
+ * wrong secret, a non-Base endpoint, or a provider that can't serve the
+ * indexer should die here, not 40 minutes in.
+ */
+export async function preflight(client: IndexerClient, log: (msg: string) => void): Promise<void> {
+  let chainId: number;
+  try {
+    chainId = await client.getChainId();
+  } catch (err) {
+    throw new Error(
+      "preflight: BASE_RPC_URL did not answer eth_chainId. Check that the secret is a plain " +
+        "JSON-RPC URL with no trailing whitespace/newline, that the provider is up, and that it " +
+        `accepts POST from CI. Underlying error: ${(err as Error).message?.split("\n")[0]}`,
+    );
+  }
+  if (chainId !== base.id) {
+    throw new Error(
+      `preflight: BASE_RPC_URL is chain ${chainId}, expected Base (${base.id}) — wrong endpoint in the secret.`,
+    );
+  }
+  const block = await client.getBlockNumber();
+  log(`preflight ok: Base chainId ${chainId}, head block ${block}`);
+}
 
 /** Binary-search the last block with timestamp < ts. */
 export async function blockBefore(client: IndexerClient, ts: bigint): Promise<bigint> {
@@ -141,14 +187,17 @@ export interface IndexOptions {
    * scans infeasible — data.yml must use a Growth/PAYG key).
    */
   logSpan?: bigint;
+  /** Transport tuning (see ClientOptions). */
+  client?: ClientOptions;
   /** Progress callback. */
   onProgress?: (msg: string) => void;
 }
 
 export async function indexAerodrome(opts: IndexOptions): Promise<RawDataset> {
-  const client = makeClient(opts.rpcUrl);
+  const client = makeClient(opts.rpcUrl, opts.client ?? {});
   const log = opts.onProgress ?? (() => {});
 
+  await preflight(client, log);
   log(`discovering top ${opts.topPools} pools…`);
   const pools = await discoverTopPools(client, opts.topPools);
   const rewardToPool = new Map<string, Address>();

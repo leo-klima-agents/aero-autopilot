@@ -41,3 +41,22 @@ pnpm --filter @aero-poc/core calibrate -- ../../data/aerodrome-raw.json ../../da
 Indexer status (2026-07-17): pool discovery, epoch-boundary binary search, and
 vote-weight multicalls verified against live Base; the reward-event scan needs
 a paid-tier key (`data.yml` expects one in `BASE_RPC_URL`).
+
+## Troubleshooting a failed `data.yml` run
+
+The indexer preflights the endpoint (eth_chainId + block number) before the
+crawl and prints a diagnosis, so most misconfigurations fail in seconds:
+
+- **Timeout on the first call** — the endpoint isn't answering CI. Check the
+  `BASE_RPC_URL` secret is a plain JSON-RPC URL (no trailing whitespace or
+  newline — re-paste it), and that the provider is reachable from GitHub's
+  runners. JSON-RPC *array batching* is a classic silent-hang cause on some
+  providers/gateways; the indexer therefore sends single requests by default —
+  only pass `--batch` on a provider known to support batches.
+- **`preflight: … chain X, expected Base (8453)`** — the secret points at the
+  wrong network.
+- **`eth_getLogs` range errors mid-run** — provider tier caps the block range
+  (free Alchemy: 10 blocks). Use a paid tier or shrink `--span` to the cap
+  (a full epoch is ~302,400 Base blocks, so tiny spans are impractically slow).
+- Reproduce locally with a small slice before burning CI minutes:
+  `BASE_RPC_URL=… pnpm --filter @aero-poc/core index-data -- --pools 3 --epochs 1`.

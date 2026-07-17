@@ -22,6 +22,11 @@ const pools = Number(arg("pools", "30"));
 const epochs = Number(arg("epochs", "52"));
 const span = BigInt(arg("span", "9000")!);
 const out = resolve(arg("out", "../../data/aerodrome-raw.json"));
+// JSON-RPC array batching is opt-in: some providers hang on batched requests.
+const batch = process.argv.includes("--batch");
+const timeoutMs = Number(arg("timeout", "30")) * 1000;
+// Requests-per-second budget; keep under the provider's cap incl. retries.
+const rps = Number(arg("rps", "15"));
 
 const started = Date.now();
 indexAerodrome({
@@ -29,6 +34,8 @@ indexAerodrome({
   topPools: pools,
   epochs,
   logSpan: span,
+  rps,
+  client: { batch, timeoutMs },
   onProgress: (msg) => console.log(`[indexer] ${msg}`),
 })
   .then((dataset) => {

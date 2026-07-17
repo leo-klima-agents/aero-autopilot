@@ -1,0 +1,21 @@
+{
+  "name": "aero-autopilot",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "fixtures": "pnpm --filter @aero-poc/core fixtures",
+    "manifest:build": "node scripts/build-facet-manifest.mjs",
+    "manifest:check": "node scripts/build-facet-manifest.mjs --check",
+    "secretscan": "node scripts/scan-bundle-for-secrets.mjs apps/web/dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}

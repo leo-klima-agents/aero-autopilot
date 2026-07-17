@@ -66,6 +66,23 @@ jobs:
       - name: manifest check
         run: pnpm manifest:check
 
+  slither:
+    name: slither (fail on new HIGH; triage in contracts/SLITHER-TRIAGE.md)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install slither-analyzer
+      - run: slither .
+        working-directory: contracts
+
   web:
     name: web (build + bundle secret scan)
     runs-on: ubuntu-latest

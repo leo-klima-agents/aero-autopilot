@@ -1,0 +1,33 @@
+name: fork-tests
+
+# The fork suite exercises the money path against real Aerodrome on Base at a
+# pinned block (§7.3). Nightly, plus PRs labeled `fork-tests`, plus manual runs.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  pull_request:
+    types: [labeled, synchronize]
+  workflow_dispatch:
+
+concurrency:
+  group: fork-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fork:
+    if: >
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'fork-tests')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+      - name: forge test (fork suite)
+        run: forge test --match-path 'test/fork/*' -vv
+        working-directory: contracts
+        env:
+          BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}

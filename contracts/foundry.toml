@@ -15,6 +15,10 @@ fs_permissions = [
     { access = "read", path = "./test/differential/fixtures" },
     { access = "read", path = "./facets.json" },
 ]
+# 2018 = "can be restricted to view": protocol facets must match the frozen
+# IProtocolFacet mutability even where a mock's implementation happens not to
+# write (e.g. MockAeroFacet.claimRebase returns 0 — the real one mutates).
+ignored_error_codes = [2018]
 # The vendored EIP-2535 reference (src/Diamond.sol, libraries/LibDiamond.sol,
 # facets/DiamondCut/LoupeFacet.sol) is the ONLY sanctioned assembly (P5).
 

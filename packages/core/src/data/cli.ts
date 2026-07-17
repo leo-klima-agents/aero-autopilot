@@ -20,6 +20,7 @@ if (!rpcUrl) {
 
 const pools = Number(arg("pools", "30"));
 const epochs = Number(arg("epochs", "52"));
+const span = BigInt(arg("span", "9000")!);
 const out = resolve(arg("out", "../../data/aerodrome-raw.json"));
 
 const started = Date.now();
@@ -27,6 +28,7 @@ indexAerodrome({
   rpcUrl,
   topPools: pools,
   epochs,
+  logSpan: span,
   onProgress: (msg) => console.log(`[indexer] ${msg}`),
 })
   .then((dataset) => {

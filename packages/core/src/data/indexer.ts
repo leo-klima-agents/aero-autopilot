@@ -135,6 +135,12 @@ export interface IndexOptions {
   rpcUrl: string;
   topPools: number;
   epochs: number;
+  /**
+   * eth_getLogs block-range chunk. Default 9000 requires a paid RPC tier
+   * (Alchemy free tier caps the range at 10 blocks, which makes full-epoch
+   * scans infeasible — data.yml must use a Growth/PAYG key).
+   */
+  logSpan?: bigint;
   /** Progress callback. */
   onProgress?: (msg: string) => void;
 }
@@ -175,8 +181,10 @@ export async function indexAerodrome(opts: IndexOptions): Promise<RawDataset> {
       })),
     )) as bigint[];
 
+    const span = opts.logSpan ?? 9_000n;
     const rewardAddrs = pools.flatMap((p) => [p.feesReward, p.bribeReward]);
-    const notifyLogs = await getLogsChunked(client, rewardAddrs, notifyRewardEvent, startBlock, endBlock);
+    const notifyLogs =
+      await getLogsChunked(client, rewardAddrs, notifyRewardEvent, startBlock, endBlock, span);
     const rewards: RawRewardEvent[] = notifyLogs.map((l) => ({
       pool: rewardToPool.get(l.address.toLowerCase())!,
       token: l.args.reward!,
@@ -189,6 +197,7 @@ export async function indexAerodrome(opts: IndexOptions): Promise<RawDataset> {
       distributeRewardEvent,
       startBlock,
       endBlock,
+      span,
     );
     const emissions = pools.map(() => 0n);
     for (const l of distLogs) {

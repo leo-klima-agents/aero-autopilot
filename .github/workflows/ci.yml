@@ -1,0 +1,82 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: core (typecheck + vitest + fixture drift)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @aero-poc/core typecheck
+      - run: pnpm --filter @aero-poc/keeper typecheck
+      - run: pnpm --filter @aero-poc/core test
+      - run: pnpm --filter @aero-poc/keeper test
+      # P2: regenerate differential fixtures; any drift between committed
+      # vectors and the generators fails the build.
+      - name: fixture drift check
+        run: |
+          pnpm fixtures
+          git diff --exit-code -- contracts/test/differential/fixtures
+
+  contracts:
+    name: contracts (fmt + build + unit/diamond/invariant/differential + manifest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: forge fmt check
+        run: forge fmt --check
+        working-directory: contracts
+      # Strict warning gate on production sources; test fixtures legitimately
+      # exceed the deployed-size limits (they never deploy on-chain).
+      - name: forge build (src, deny warnings)
+        run: forge build --skip 'test/**' --skip 'script/**' --deny warnings
+        working-directory: contracts
+      # Everything except the fork suite (which needs BASE_RPC_URL secrets and
+      # runs from fork-tests.yml).
+      - name: forge test
+        run: FOUNDRY_PROFILE=ci forge test --no-match-path 'test/fork/*' -vvv
+        working-directory: contracts
+      # §4.1: facets.json is the loupe's off-chain mirror — fail on drift or
+      # selector collisions between coexisting facets.
+      - name: manifest check
+        run: pnpm manifest:check
+
+  web:
+    name: web (build + bundle secret scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @aero-poc/web build
+      # P7: the site is static and secret-free, always.
+      - run: node scripts/scan-bundle-for-secrets.mjs apps/web/dist

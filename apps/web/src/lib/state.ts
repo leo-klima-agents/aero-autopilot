@@ -188,6 +188,31 @@ export function writeLocationState(state: SimState): void {
   history.replaceState(null, "", HASH_KEY + encodeState(state));
 }
 
+/** ── vault-control applicability ──────────────────────────────────────────── */
+
+/** One weekly epoch, the v2 vote period. */
+export const WEEK_SEC = "604800";
+
+export function isEpochModel(model: ModelKind): boolean {
+  return model === "epoch" || model === "epoch-live";
+}
+
+/**
+ * Vault controls as they actually run for the selected model. Aerodrome v2 has
+ * a single GLOBAL weekly epoch — every veNFT shares one vote window — so there
+ * is no per-position rolling cooldown to stagger against: sleeving and
+ * sub-weekly cooldowns are v3-only levers and do nothing here. The v2 models
+ * therefore pin to one sleeve on the epoch clock. Stored state is preserved
+ * (not overwritten), so returning to Aero v3 restores the user's tuning; the
+ * panel greys these controls in v2 and shows the pinned values.
+ */
+export function effectiveTranches(state: SimState): number {
+  return isEpochModel(state.model) ? 1 : state.tranches;
+}
+export function effectiveCooldownSec(state: SimState): string {
+  return isEpochModel(state.model) ? WEEK_SEC : state.cooldownSec;
+}
+
 /** ── request assembly ─────────────────────────────────────────────────────── */
 
 /**
@@ -207,9 +232,10 @@ export function buildRequest(state: SimState, id: number, live?: EpochDataset | 
     id,
     model,
     strategy: state.strategy,
-    trancheCount: state.tranches,
+    // v2 pins to 1 sleeve on the epoch clock (see effectiveTranches).
+    trancheCount: effectiveTranches(state),
     totalPowerWad: TOTAL_POWER_WAD,
-    cooldownSec: state.cooldownSec,
+    cooldownSec: effectiveCooldownSec(state),
     epsilonWad: EPSILON_WAD,
     // The strategy's own cadence field is the single decision-cadence control;
     // the runner consults on the same clock the config is hashed with.

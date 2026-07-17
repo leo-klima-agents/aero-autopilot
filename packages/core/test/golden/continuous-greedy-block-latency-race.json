@@ -1,0 +1,10 @@
+{
+ "totalReturn": 0.001400475819546608,
+ "benchmarkReturn": 0.001449192871878857,
+ "excessReturn": -0.000048717052332249,
+ "maxDrawdownVsBenchmark": 0.000048717052332249,
+ "turnover": 155.46666666666667,
+ "onTargetPct": 0.9995039682539683,
+ "emissionsAccuracy": 0.9987,
+ "rotations": 4300
+}

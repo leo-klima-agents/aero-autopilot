@@ -1,0 +1,53 @@
+name: data
+
+# Scheduled dataset builder (P7: secrets live here, the site fetches plain
+# JSON). Weekly after the Thursday epoch flip, plus manual runs.
+# NOTE: requires a paid-tier RPC key in BASE_RPC_URL — free Alchemy caps
+# eth_getLogs at a 10-block range (see data/README.md).
+on:
+  schedule:
+    - cron: "0 6 * * 4"
+  workflow_dispatch:
+    inputs:
+      pools:
+        description: "top-N pools"
+        default: "30"
+      epochs:
+        description: "trailing epochs"
+        default: "52"
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: index Aerodrome history
+        run: >
+          pnpm --filter @aero-poc/core index-data --
+          --pools ${{ inputs.pools || '30' }}
+          --epochs ${{ inputs.epochs || '52' }}
+          --out ../../data/aerodrome-raw.json
+        env:
+          # The indexer's ONLY endpoint — multicalls, block search, and
+          # eth_getLogs all go through it. Must be a tier that allows wide
+          # getLogs ranges (free Alchemy caps at 10 blocks).
+          BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
+      - name: calibrate to AERO-denominated dataset
+        run: >
+          pnpm --filter @aero-poc/core calibrate --
+          ../../data/aerodrome-raw.json ../../data/prices.json ../../data/aerodrome.json
+      - name: commit dataset
+        run: |
+          git config user.name "aero-autopilot-data[bot]"
+          git config user.email "noreply@users.noreply.github.com"
+          git add data/aerodrome-raw.json data/aerodrome.json
+          git diff --cached --quiet || git commit -m "data: refresh Aerodrome dataset ($(date -u +%F))"
+          git push

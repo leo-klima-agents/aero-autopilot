@@ -1,0 +1,34 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# env & secrets — keys live only in Actions secrets and keeper env (P7)
+.env
+.env.*
+!.env.example
+
+# build output
+dist/
+out/
+cache/
+broadcast/
+coverage/
+lcov.info
+
+# editor/os
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# foundry
+contracts/cache/
+contracts/out/
+contracts/broadcast/
+
+# vite
+apps/web/dist/
+*.local
+
+# logs
+*.log

@@ -1,0 +1,15 @@
+export * from "./types.js";
+export * from "./math/fixed.js";
+export * from "./scheduler/cooldown.js";
+export * from "./scheduler/scheduler.js";
+export * from "./model/types.js";
+export * from "./model/prng.js";
+export * from "./model/prorata.js";
+export * from "./model/gaugecap.js";
+export * from "./model/epoch.js";
+export * from "./model/continuous.js";
+export * from "./model/scenarios.js";
+export * from "./strategies/index.js";
+export * from "./backtest/runner.js";
+export { executeRequest, type BacktestRequest, type BacktestResponse } from "./backtest/worker.js";
+export * from "./data/synthetic.js";

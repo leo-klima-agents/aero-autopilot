@@ -18,6 +18,13 @@ on:
       rps:
         description: "requests/second budget (stay under the provider cap)"
         default: "15"
+      span:
+        description: "eth_getLogs blocks per query (10000 = QuickNode paid-plan limit)"
+        default: "10000"
+      batch:
+        description: "JSON-RPC array batching (only on providers known to support it)"
+        type: boolean
+        default: false
 
 jobs:
   index:
@@ -38,6 +45,8 @@ jobs:
           --pools ${{ inputs.pools || '30' }}
           --epochs ${{ inputs.epochs || '52' }}
           --rps ${{ inputs.rps || '15' }}
+          --span ${{ inputs.span || '10000' }}
+          ${{ inputs.batch && '--batch' || '' }}
           --out ../../data/aerodrome-raw.json
         env:
           # The indexer's ONLY endpoint — multicalls, block search, and

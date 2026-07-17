@@ -50,9 +50,11 @@ crawl and prints a diagnosis, so most misconfigurations fail in seconds:
 - **Timeout on the first call** — the endpoint isn't answering CI. Check the
   `BASE_RPC_URL` secret is a plain JSON-RPC URL (no trailing whitespace or
   newline — re-paste it), and that the provider is reachable from GitHub's
-  runners. JSON-RPC *array batching* is a classic silent-hang cause on some
-  providers/gateways; the indexer therefore sends single requests by default —
-  only pass `--batch` on a provider known to support batches.
+  runners. The indexer never uses JSON-RPC array batching (a classic
+  silent-hang cause on some providers/gateways, and batch items count against
+  rate caps individually anyway); latency is overlapped with bounded chunk
+  concurrency instead (`--concurrency`, default 20 ≈ rps × typical latency), while `--rps` remains the
+  hard ceiling on request starts.
 - **`preflight: … chain X, expected Base (8453)`** — the secret points at the
   wrong network.
 - **`eth_getLogs` range errors mid-run** — provider tier caps the block range
@@ -60,12 +62,13 @@ crawl and prints a diagnosis, so most misconfigurations fail in seconds:
   10). `--span` is denominated in blocks per query, exactly as providers
   document their limits: the default `--span 10000` matches QuickNode's
   paid-plan cap — set it to your provider's number, noting a full epoch is
-  ~302,400 Base blocks, so free-tier spans are impractically slow. Both
-  `span` and `batch` are settable from the data.yml Run-workflow menu.
+  ~302,400 Base blocks, so free-tier spans are impractically slow. `span`,
+  `concurrency`, and `rps` are all settable from the data.yml Run-workflow menu.
 - **"N/second request limit reached"** — the provider caps requests per
-  second (e.g. QuickNode entry tiers at 50 rps). All indexer requests run
-  sequentially under a pacer budgeted at `--rps` (default 15); lower it to
-  match a stricter cap. Multicalls are sent as ONE aggregate3 request per
-  300-call chunk precisely so the budget holds.
+  second (e.g. QuickNode entry tiers at 50 rps). Every request start is
+  reserved through a shared pacer budgeted at `--rps` (default 40, sized for QuickNode’s 50 rps cap with retry headroom) — including
+  the concurrent log-scan workers — so lower `--rps` to match a stricter cap.
+  Multicalls are sent as ONE aggregate3 request per 300-call chunk precisely
+  so the budget holds.
 - Reproduce locally with a small slice before burning CI minutes:
   `BASE_RPC_URL=… pnpm --filter @aero-poc/core index-data -- --pools 3 --epochs 1`.

@@ -45,14 +45,6 @@ export interface RawDataset {
 }
 
 export interface ClientOptions {
-  /**
-   * JSON-RPC array batching. OFF by default: several providers/gateways hang
-   * on array-wrapped requests (observed as a timeout on the very first
-   * eth_call), and the heavy reads already aggregate via the multicall
-   * contract, so transport batching buys little. Opt in with --batch on a
-   * provider known to support it.
-   */
-  batch?: boolean;
   /** Per-request timeout, ms (default 30s — epoch-boundary getLogs can be slow). */
   timeoutMs?: number;
 }
@@ -61,7 +53,11 @@ export function makeClient(rpcUrl: string, opts: ClientOptions = {}) {
   return createPublicClient({
     chain: base,
     transport: http(rpcUrl, {
-      batch: opts.batch ?? false,
+      // No JSON-RPC array batching, ever: some providers/gateways hang on
+      // array-wrapped requests, batch items count individually against rate
+      // caps anyway, and bounded chunk concurrency (below) is the sanctioned
+      // way to overlap latency.
+      batch: false,
       timeout: opts.timeoutMs ?? 30_000,
       retryCount: 5,
       retryDelay: 500,
@@ -76,6 +72,10 @@ export type IndexerClient = ReturnType<typeof makeClient>;
  * under a requests-per-second budget. Provider rate caps (e.g. QuickNode's
  * 50 rps entry tier) count every JSON-RPC call, and viem retries add bursts,
  * so the default budget stays well under typical caps.
+ *
+ * Concurrency-safe by construction: the read-modify-write of nextSlot is
+ * synchronous, so N concurrent callers reserve N distinct, correctly spaced
+ * start slots before any of them awaits.
  */
 export class Pacer {
   private nextSlot = 0;
@@ -195,9 +195,24 @@ const distributeRewardEvent = parseAbiItem(
   "event DistributeReward(address indexed sender, address indexed gauge, uint256 amount)",
 );
 
-/** @param span blocks per query (from..to inclusive), matching how providers
- * document their eth_getLogs range limits: span 10000 = a 10,000-block query. */
-async function getLogsChunked<TEvent extends typeof notifyRewardEvent | typeof distributeRewardEvent>(
+/**
+ * Chunked log scan with bounded concurrency: up to `concurrency` independent
+ * range queries in flight at once, every request start still reserved through
+ * the shared Pacer, results flattened in deterministic chunk order (so the
+ * committed dataset is byte-stable regardless of completion order).
+ *
+ * Concurrency is the sanctioned latency lever (JSON-RPC batching is not: it
+ * coalesces only simultaneous requests, counts per-item against rate caps,
+ * and some gateways hang on it). Wall time ≈ chunks × latency ÷ concurrency,
+ * with the rps budget as the hard ceiling.
+ *
+ * @param span blocks per query (from..to inclusive), matching how providers
+ * document their eth_getLogs range limits: span 10000 = a 10,000-block query.
+ * Exported for tests.
+ */
+export async function getLogsChunked<
+  TEvent extends typeof notifyRewardEvent | typeof distributeRewardEvent,
+>(
   client: IndexerClient,
   addresses: Address[],
   event: TEvent,
@@ -205,15 +220,35 @@ async function getLogsChunked<TEvent extends typeof notifyRewardEvent | typeof d
   toBlock: bigint,
   span: bigint,
   pacer?: Pacer,
+  concurrency = 1,
 ) {
   if (span < 1n) throw new Error("logSpan must be ≥ 1 block");
-  const out = [];
+  if (concurrency < 1) throw new Error("concurrency must be ≥ 1");
+
+  const chunks: { from: bigint; to: bigint }[] = [];
   for (let from = fromBlock; from <= toBlock; from += span) {
     const to = from + span - 1n > toBlock ? toBlock : from + span - 1n;
-    await pacer?.tick();
-    out.push(...(await client.getLogs({ address: addresses, event, fromBlock: from, toBlock: to })));
+    chunks.push({ from, to });
   }
-  return out;
+
+  type Log = Awaited<ReturnType<typeof client.getLogs<TEvent>>>[number];
+  const results: Log[][] = new Array(chunks.length);
+  let next = 0;
+  const worker = async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= chunks.length) return;
+      await pacer?.tick();
+      results[i] = (await client.getLogs({
+        address: addresses,
+        event,
+        fromBlock: chunks[i]!.from,
+        toBlock: chunks[i]!.to,
+      })) as Log[];
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, chunks.length || 1) }, worker));
+  return results.flat();
 }
 
 export interface IndexOptions {
@@ -228,11 +263,19 @@ export interface IndexOptions {
    */
   logSpan?: bigint;
   /**
-   * Requests-per-second budget across ALL JSON-RPC calls (default 15 —
-   * conservative under common entry-tier caps like QuickNode's 50 rps,
-   * leaving headroom for viem's automatic retries).
+   * Requests-per-second budget across ALL JSON-RPC calls (default 40 —
+   * sized for QuickNode's 50 rps entry cap with headroom for viem's
+   * automatic retries, which bypass the pacer; lower it for stricter
+   * providers).
    */
   rps?: number;
+  /**
+   * Log-scan requests in flight at once (default 20 ≈ rps × typical getLogs
+   * latency, the Little's-law saturation point). Overlaps round-trip latency
+   * without touching the rps ceiling — the Pacer still spaces every request
+   * start, so higher values cannot breach the budget.
+   */
+  concurrency?: number;
   /** Transport tuning (see ClientOptions). */
   client?: ClientOptions;
   /** Progress callback. */
@@ -242,7 +285,7 @@ export interface IndexOptions {
 export async function indexAerodrome(opts: IndexOptions): Promise<RawDataset> {
   const client = makeClient(opts.rpcUrl, opts.client ?? {});
   const log = opts.onProgress ?? (() => {});
-  const pacer = new Pacer(opts.rps ?? 15);
+  const pacer = new Pacer(opts.rps ?? 40);
 
   await preflight(client, log);
   log(`discovering top ${opts.topPools} pools…`);
@@ -282,7 +325,9 @@ export async function indexAerodrome(opts: IndexOptions): Promise<RawDataset> {
     const span = opts.logSpan ?? 10_000n;
     const rewardAddrs = pools.flatMap((p) => [p.feesReward, p.bribeReward]);
     const notifyLogs =
-      await getLogsChunked(client, rewardAddrs, notifyRewardEvent, startBlock, endBlock, span, pacer);
+      await getLogsChunked(
+        client, rewardAddrs, notifyRewardEvent, startBlock, endBlock, span, pacer, opts.concurrency ?? 20
+      );
     const rewards: RawRewardEvent[] = notifyLogs.map((l) => ({
       pool: rewardToPool.get(l.address.toLowerCase())!,
       token: l.args.reward!,
@@ -297,6 +342,7 @@ export async function indexAerodrome(opts: IndexOptions): Promise<RawDataset> {
       endBlock,
       span,
       pacer,
+      opts.concurrency ?? 20,
     );
     const emissions = pools.map(() => 0n);
     for (const l of distLogs) {

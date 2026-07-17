@@ -24,11 +24,12 @@ const epochs = Number(arg("epochs", "52"));
 // paid plans (free trial: 5; free Alchemy: 10). Match your provider's cap.
 const span = BigInt(arg("span", "10000")!);
 const out = resolve(arg("out", "../../data/aerodrome-raw.json"));
-// JSON-RPC array batching is opt-in: some providers hang on batched requests.
-const batch = process.argv.includes("--batch");
 const timeoutMs = Number(arg("timeout", "30")) * 1000;
 // Requests-per-second budget; keep under the provider's cap incl. retries.
-const rps = Number(arg("rps", "15"));
+const rps = Number(arg("rps", "40"));
+// Log-scan requests in flight at once — overlaps latency; the rps budget
+// stays the hard ceiling on request starts. Clamped to a sane range.
+const concurrency = Math.min(32, Math.max(1, Number(arg("concurrency", "20"))));
 
 const started = Date.now();
 indexAerodrome({
@@ -37,7 +38,8 @@ indexAerodrome({
   epochs,
   logSpan: span,
   rps,
-  client: { batch, timeoutMs },
+  concurrency,
+  client: { timeoutMs },
   onProgress: (msg) => console.log(`[indexer] ${msg}`),
 })
   .then((dataset) => {

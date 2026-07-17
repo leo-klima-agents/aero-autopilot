@@ -50,6 +50,16 @@ export const EPOCH_STORY: Story = {
     "today, so this is the baseline every v3 result should be read against.",
 };
 
+export const EPOCH_LIVE_STORY: Story = {
+  title: "Aerodrome v2 — recorded history",
+  body:
+    "The real thing: per-epoch voter revenue (fees + incentives, AERO-denominated via a static price table), " +
+    "external vote weights, and emissions for the top Aerodrome pools, indexed from Base by the weekly data " +
+    "pipeline and shipped with this page as plain JSON. No seed, no generator — the only knobs left are yours: " +
+    "strategy, cooldown, tranches. What the autopilot would actually have earned lives here.",
+};
+
 export function storyFor(model: ModelKind, scenario: ScenarioName): Story {
+  if (model === "epoch-live") return EPOCH_LIVE_STORY;
   return model === "epoch" ? EPOCH_STORY : SCENARIO_STORIES[scenario];
 }

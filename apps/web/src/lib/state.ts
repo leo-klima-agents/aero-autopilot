@@ -10,12 +10,15 @@ import {
   STRATEGY_DESCRIPTORS,
   generateSyntheticEpochDataset,
   type BacktestRequest,
+  type EpochDataset,
   type ScenarioName,
   type StrategyConfig,
   type StrategyDescriptor,
 } from "@aero-poc/core";
 
-export type ModelKind = "epoch" | "continuous";
+/** "epoch" = synthetic v2 weeks; "epoch-live" = the CI-built historical
+ * Aerodrome dataset shipped with the site; "continuous" = Aero v3 sim. */
+export type ModelKind = "epoch" | "epoch-live" | "continuous";
 
 export interface SimState {
   model: ModelKind;
@@ -131,7 +134,8 @@ function sanitize(parsed: unknown): SimState {
   if (parsed === null || typeof parsed !== "object") return d;
   const p = parsed as Record<string, unknown>;
 
-  const model: ModelKind = p.model === "epoch" ? "epoch" : "continuous";
+  const model: ModelKind =
+    p.model === "epoch" || p.model === "epoch-live" ? p.model : "continuous";
   const scenario = SCENARIO_NAMES.includes(p.scenario as ScenarioName)
     ? (p.scenario as ScenarioName)
     : d.scenario;
@@ -186,11 +190,19 @@ export function writeLocationState(state: SimState): void {
 
 /** ── request assembly ─────────────────────────────────────────────────────── */
 
-export function buildRequest(state: SimState, id: number): BacktestRequest {
+/**
+ * @param live the fetched historical dataset; when "epoch-live" is selected
+ * but the dataset isn't available (fetch failed / still loading), the run
+ * falls back to the synthetic epoch model so the page always renders — the
+ * panel communicates the degradation.
+ */
+export function buildRequest(state: SimState, id: number, live?: EpochDataset | null): BacktestRequest {
   const model =
-    state.model === "epoch"
-      ? { kind: "epoch" as const, dataset: generateSyntheticEpochDataset({ ...EPOCH_DATASET_SHAPE, seed: state.seed }) }
-      : { kind: "continuous" as const, scenario: scaledScenario(state) };
+    state.model === "epoch-live" && live
+      ? { kind: "epoch" as const, dataset: live }
+      : state.model === "epoch" || state.model === "epoch-live"
+        ? { kind: "epoch" as const, dataset: generateSyntheticEpochDataset({ ...EPOCH_DATASET_SHAPE, seed: state.seed }) }
+        : { kind: "continuous" as const, scenario: scaledScenario(state) };
   return {
     id,
     model,

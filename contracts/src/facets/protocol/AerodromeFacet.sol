@@ -167,6 +167,10 @@ contract AerodromeFacet is IProtocolFacet {
     /// Every hop must stay inside the Owner-set reward-token allowlist and
     /// every route must terminate in AERO — a compromised keeper can waste
     /// gas, not exfiltrate value (P6 damage ceilings).
+    /// @dev Triaged HIGH (SLITHER-TRIAGE.md): the balance-delta accounting is
+    /// deliberate. Entry is keeper-gated behind ExecutionFacet's nonReentrant
+    /// or the Owner; the router is the canonical Aerodrome router.
+    // slither-disable-start reentrancy-balance
     function swapToAero(bytes calldata data, uint256 minOut)
         external
         onlyAuthorized
@@ -205,6 +209,7 @@ contract AerodromeFacet is IProtocolFacet {
         require(amountOut >= minOut, "Aerodrome: insufficient output");
         emit SwappedToAero(amountOut);
     }
+    // slither-disable-end reentrancy-balance
 
     function compoundPosition(uint256 positionId, uint256 amount) external onlyAuthorized {
         LibVaultStorage.ProtocolConfigStorage storage cfg = LibVaultStorage.protocolConfig();
@@ -221,6 +226,9 @@ contract AerodromeFacet is IProtocolFacet {
     /// (fixed in v2) and verified empirically by the fork suite.
     function cooldownRemaining(uint256 positionId) external view returns (uint256) {
         IVoter voter = IVoter(LibVaultStorage.protocolConfig().voter);
+        // Triaged (SLITHER-TRIAGE.md): modulo on timestamp is epoch
+        // arithmetic, not randomness.
+        // slither-disable-next-line weak-prng
         uint256 epochStart = block.timestamp - (block.timestamp % WEEK);
         uint256 lastVoted = voter.lastVoted(positionId);
         uint256 nextAllowed;
@@ -236,6 +244,8 @@ contract AerodromeFacet is IProtocolFacet {
     }
 
     function currentWindow() external view returns (uint64 start, uint64 end) {
+        // Triaged (SLITHER-TRIAGE.md): epoch arithmetic, not randomness.
+        // slither-disable-next-line weak-prng
         uint256 epochStart = block.timestamp - (block.timestamp % WEEK);
         // casting to 'uint64' is safe: unix timestamps fit uint64 for ~584B years
         // forge-lint: disable-next-line(unsafe-typecast)

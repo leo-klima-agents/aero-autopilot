@@ -20,7 +20,9 @@ if (!rpcUrl) {
 
 const pools = Number(arg("pools", "30"));
 const epochs = Number(arg("epochs", "52"));
-const span = BigInt(arg("span", "9000")!);
+// Chunks are inclusive (span+1 blocks per query); 9999 = exactly the 10,000-
+// block eth_getLogs limit QuickNode documents for paid plans (free trial: 5).
+const span = BigInt(arg("span", "9999")!);
 const out = resolve(arg("out", "../../data/aerodrome-raw.json"));
 // JSON-RPC array batching is opt-in: some providers hang on batched requests.
 const batch = process.argv.includes("--batch");

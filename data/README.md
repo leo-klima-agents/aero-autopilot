@@ -56,8 +56,12 @@ crawl and prints a diagnosis, so most misconfigurations fail in seconds:
 - **`preflight: … chain X, expected Base (8453)`** — the secret points at the
   wrong network.
 - **`eth_getLogs` range errors mid-run** — provider tier caps the block range
-  (free Alchemy: 10 blocks). Use a paid tier or shrink `--span` to the cap
-  (a full epoch is ~302,400 Base blocks, so tiny spans are impractically slow).
+  (QuickNode paid plans: 10,000 blocks; QuickNode free trial: 5; free Alchemy:
+  10). The default `--span 9999` queries exactly 10,000 blocks (chunks are
+  inclusive), matching QuickNode's documented paid-plan limit — shrink it to
+  your provider's cap, noting a full epoch is ~302,400 Base blocks, so
+  free-tier spans are impractically slow. Both `span` and `batch` are
+  settable from the data.yml Run-workflow menu.
 - **"N/second request limit reached"** — the provider caps requests per
   second (e.g. QuickNode entry tiers at 50 rps). All indexer requests run
   sequentially under a pacer budgeted at `--rps` (default 15); lower it to

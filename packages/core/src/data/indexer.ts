@@ -218,9 +218,10 @@ export interface IndexOptions {
   topPools: number;
   epochs: number;
   /**
-   * eth_getLogs block-range chunk. Default 9000 requires a paid RPC tier
-   * (Alchemy free tier caps the range at 10 blocks, which makes full-epoch
-   * scans infeasible — data.yml must use a Growth/PAYG key).
+   * eth_getLogs block-range chunk, INCLUSIVE (span+1 blocks per query).
+   * Default 9999 = exactly the 10,000-block limit QuickNode documents for
+   * paid plans. Requires a paid RPC tier either way (QuickNode free trial:
+   * 5 blocks; Alchemy free: 10 — both make full-epoch scans infeasible).
    */
   logSpan?: bigint;
   /**
@@ -275,7 +276,7 @@ export async function indexAerodrome(opts: IndexOptions): Promise<RawDataset> {
       pacer,
     )) as bigint[];
 
-    const span = opts.logSpan ?? 9_000n;
+    const span = opts.logSpan ?? 9_999n;
     const rewardAddrs = pools.flatMap((p) => [p.feesReward, p.bribeReward]);
     const notifyLogs =
       await getLogsChunked(client, rewardAddrs, notifyRewardEvent, startBlock, endBlock, span, pacer);

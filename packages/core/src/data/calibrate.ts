@@ -57,7 +57,9 @@ export function calibrate(raw: RawDataset, prices: PriceTable): { dataset: Epoch
 /** CLI: tsx src/data/calibrate.ts <raw.json> <prices.json> <out.json> */
 const invokedDirectly = process.argv[1]?.endsWith("calibrate.ts");
 if (invokedDirectly) {
-  const [rawPath, pricesPath, outPath] = process.argv.slice(2);
+  // pnpm forwards the literal `--` separator into argv; drop it before
+  // reading positionals.
+  const [rawPath, pricesPath, outPath] = process.argv.slice(2).filter((a) => a !== "--");
   if (!rawPath || !pricesPath || !outPath) {
     console.error("usage: calibrate <raw.json> <prices.json> <out.json>");
     process.exit(1);

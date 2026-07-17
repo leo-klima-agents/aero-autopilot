@@ -36,8 +36,10 @@ jobs:
           --epochs ${{ inputs.epochs || '52' }}
           --out ../../data/aerodrome-raw.json
         env:
+          # The indexer's ONLY endpoint — multicalls, block search, and
+          # eth_getLogs all go through it. Must be a tier that allows wide
+          # getLogs ranges (free Alchemy caps at 10 blocks).
           BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
-          ALCHEMY_API_KEY: ${{ secrets.ALCHEMY_API_KEY }}
       - name: calibrate to AERO-denominated dataset
         run: >
           pnpm --filter @aero-poc/core calibrate --

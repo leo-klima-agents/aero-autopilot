@@ -4,8 +4,8 @@
  * contracts), and gauge emissions for the top-N pools, emitting a raw
  * schema-versioned JSON that calibrate.ts reduces to an EpochDataset.
  *
- * Consumes RPC_URL/ALCHEMY_KEY from the environment only (P7) — run by
- * data.yml in CI or locally, never from the browser.
+ * Consumes BASE_RPC_URL from the environment only (P7) — run by data.yml in
+ * CI or locally, never from the browser.
  */
 import { createPublicClient, http, parseAbiItem, type Address } from "viem";
 import { base } from "viem/chains";

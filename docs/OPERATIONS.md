@@ -66,9 +66,9 @@ remove old owner). No diamond transaction.
 `cast call $DIAMOND "owner()(address)" --rpc-url $BASE_RPC_URL`. Treat this with cut-ceremony
 seriousness (§5): whoever owns the diamond owns everything.
 
-**Secret storage:** `KEEPER_PRIVATE_KEY`, `BASE_RPC_URL`, `ALCHEMY_API_KEY`, `ETHERSCAN_API_KEY`
-exist only in the keeper host environment and GitHub Actions repository secrets (P7). `.env` is
-gitignored; `.env.example` is the canonical variable list.
+**Secret storage:** `KEEPER_PRIVATE_KEY`, `BASE_RPC_URL`, `ETHERSCAN_API_KEY` exist only in the
+keeper host environment and GitHub Actions repository secrets (P7). `.env` is gitignored;
+`.env.example` is the canonical variable list.
 
 ---
 
@@ -357,8 +357,9 @@ to `BASE_RPC_URL_FALLBACK`; re-run the indexer
 **Secret hygiene.**
 *Prevention:* keys only in Actions secrets and the keeper environment (P7);
 `scripts/scan-bundle-for-secrets.mjs` greps every built site bundle for key patterns and forbidden
-env names (`ALCHEMY_API_KEY`, `BASE_RPC_URL`, `ETHERSCAN_API_KEY`, `KEEPER_PRIVATE_KEY`, raw 32-byte
-hex, Alchemy URLs) and fails the deploy on a hit. *Response to a leak:* rotate the key at the
+env names (`BASE_RPC_URL`, `ETHERSCAN_API_KEY`, `KEEPER_PRIVATE_KEY`, raw 32-byte hex, and
+provider-URL shapes like `*.g.alchemy.com` as a defensive leak pattern) and fails the deploy on a
+hit. *Response to a leak:* rotate the key at the
 provider, rotate the keeper key per §1.3 if `KEEPER_PRIVATE_KEY` is affected, purge and re-deploy.
 
 **Upstream parameter changes** (cooldown length and cap κ are protocol-settable).

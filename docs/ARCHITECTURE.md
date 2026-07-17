@@ -427,6 +427,6 @@ immutability endgame — a cut removing `diamondCut` itself — remains a v1+ de
 | `data.yml` | weekly schedule | indexer run (`index-data`) committing versioned JSON into `data/` |
 | `pages.yml` | push to `main` | build `apps/web`, secret-scan the bundle (`scripts/scan-bundle-for-secrets.mjs` — fails on key-shaped strings or forbidden env names in `dist/`), deploy to GitHub Pages |
 
-Secrets (`BASE_RPC_URL`, `ALCHEMY_API_KEY`, `ETHERSCAN_API_KEY`, `KEEPER_PRIVATE_KEY`) exist only in
-Actions secrets, fork-test config, and the keeper environment — never in `apps/web` (P7).
-`.env.example` documents every variable.
+Secrets (`BASE_RPC_URL`, `ETHERSCAN_API_KEY`, `KEEPER_PRIVATE_KEY`) exist only in Actions secrets,
+fork-test config, and the keeper environment — never in `apps/web` (P7). `.env.example` documents
+every variable.

@@ -17,12 +17,12 @@ if (!distDir) {
 
 const PATTERNS = [
   // env names that must never be referenced client-side
-  /ALCHEMY_API_KEY/,
   /BASE_RPC_URL/,
   /ETHERSCAN_API_KEY/,
   /KEEPER_PRIVATE_KEY/,
   // key shapes
   /\b0x[0-9a-fA-F]{64}\b/, // raw 32-byte hex (private key shaped)
+  // provider-URL shapes: a leaked BASE_RPC_URL is a key even without the env name
   /alchemy\.com\/v2\/[A-Za-z0-9_-]{20,}/,
   /https:\/\/[a-z0-9-]+\.g\.alchemy\.com/,
 ];

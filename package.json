@@ -11,8 +11,8 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "fixtures": "pnpm --filter @aero-poc/core fixtures",
-    "manifest:build": "node scripts/build-facet-manifest.mjs",
-    "manifest:check": "node scripts/build-facet-manifest.mjs --check",
+    "manifest:build": "node scripts/build-facet-manifest.mjs && node scripts/build-merged-abi.mjs",
+    "manifest:check": "node scripts/build-facet-manifest.mjs --check && node scripts/build-merged-abi.mjs --check",
     "secretscan": "node scripts/scan-bundle-for-secrets.mjs apps/web/dist"
   },
   "devDependencies": {

@@ -6,10 +6,14 @@
  *
  * Dial applicability by model — the disabled states below are the contract
  * the UI tests assert:
- *   continuous:  scenario ✓  seed ✓  κ ✓  herd-lag ✓
- *   epoch:       scenario ✗  seed ✓  κ ✗  herd-lag ✗   (synthetic weeks)
- *   epoch-live:  scenario ✗  seed ✗  κ ✗  herd-lag ✗   (recorded history —
- *                nothing is generated, so nothing is seedable)
+ *   continuous:  scenario ✓  seed ✓  cooldown ✓  tranches ✓  κ ✓  herd-lag ✓
+ *   epoch:       scenario ✗  seed ✓  cooldown ✗  tranches ✗  κ ✗  herd-lag ✗
+ *   epoch-live:  scenario ✗  seed ✗  cooldown ✗  tranches ✗  κ ✗  herd-lag ✗
+ * Cooldown and tranches grey out in BOTH v2 modes: Aerodrome v2's single
+ * global weekly epoch leaves no per-position clock to stagger against, so
+ * sleeving and sub-weekly cooldowns are v3-only levers (pinned to 1 sleeve /
+ * 7 d — see effectiveTranches/effectiveCooldownSec). Seed stays live for the
+ * synthetic weeks but greys for recorded history, which generates nothing.
  */
 import { SCENARIOS, type ScenarioName } from "@aero-poc/core";
 import { fmtDuration } from "../lib/format";
@@ -18,6 +22,8 @@ import {
   COOLDOWN_PRESETS,
   EPOCH_DATASET_SHAPE,
   SCENARIO_NAMES,
+  effectiveCooldownSec,
+  effectiveTranches,
   type SimState,
 } from "../lib/state";
 
@@ -38,6 +44,10 @@ export function FlightPlanPanel(props: {
   const continuous = state.model === "continuous";
   const epochLive = state.model === "epoch-live";
   const seedable = !epochLive; // recorded history has no seed to turn
+  // v2 pins these; show the pinned values while disabled (stored state is kept,
+  // so switching back to Aero v3 restores the user's tuning).
+  const effCooldown = effectiveCooldownSec(state);
+  const effTranches = effectiveTranches(state);
   const scenario = SCENARIOS[state.scenario](state.seed);
   const kappa = (Number(scenario.kappaWad) / 1e18) * (state.kappaPct / 100);
   const lagSec =
@@ -148,11 +158,12 @@ export function FlightPlanPanel(props: {
         </div>
       </div>
 
-      <div className="field">
+      <div className={`field${continuous ? "" : " disabled"}`}>
         <label htmlFor="cooldown">Reallocation cooldown</label>
         <select
           id="cooldown"
-          value={state.cooldownSec}
+          value={effCooldown}
+          disabled={!continuous}
           onChange={(e) => onChange({ cooldownSec: e.target.value })}
         >
           {COOLDOWN_PRESETS.map((c) => (
@@ -161,11 +172,16 @@ export function FlightPlanPanel(props: {
             </option>
           ))}
         </select>
+        <div className="help">
+          {continuous
+            ? "Minimum time between a single sleeve's reallocations."
+            : "Pinned to the weekly epoch — v2 allows one vote change per epoch, protocol-wide."}
+        </div>
       </div>
 
-      <div className="field">
+      <div className={`field${continuous ? "" : " disabled"}`}>
         <label htmlFor="tranches">
-          Tranches<span className="readout">{state.tranches}</span>
+          Tranches<span className="readout">{effTranches}</span>
         </label>
         <input
           id="tranches"
@@ -173,10 +189,15 @@ export function FlightPlanPanel(props: {
           min={1}
           max={12}
           step={1}
-          value={state.tranches}
+          value={effTranches}
+          disabled={!continuous}
           onChange={(e) => onChange({ tranches: Number(e.target.value) })}
         />
-        <div className="help">Staggered cooldown sleeves — some power is always (eventually) unlocked.</div>
+        <div className="help">
+          {continuous
+            ? "Staggered cooldown sleeves — some power is always (eventually) unlocked."
+            : "Pinned to 1 — v2's global weekly epoch gives sleeving nothing to stagger against."}
+        </div>
       </div>
 
       <div className={`field${continuous ? "" : " disabled"}`}>

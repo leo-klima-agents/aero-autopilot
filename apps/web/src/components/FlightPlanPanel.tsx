@@ -3,9 +3,17 @@
  * scenario preset, seed, cooldown, gauge-cap κ, herd lag, tranche count.
  * κ and herd-lag scale the preset's own values (they never replace them), so
  * the URL stays a pure {preset, seed, dials} record.
+ *
+ * Dial applicability by model — the disabled states below are the contract
+ * the UI tests assert:
+ *   continuous:  scenario ✓  seed ✓  κ ✓  herd-lag ✓
+ *   epoch:       scenario ✗  seed ✓  κ ✗  herd-lag ✗   (synthetic weeks)
+ *   epoch-live:  scenario ✗  seed ✗  κ ✗  herd-lag ✗   (recorded history —
+ *                nothing is generated, so nothing is seedable)
  */
 import { SCENARIOS, type ScenarioName } from "@aero-poc/core";
 import { fmtDuration } from "../lib/format";
+import type { LiveDatasetMeta } from "../lib/liveData";
 import {
   COOLDOWN_PRESETS,
   EPOCH_DATASET_SHAPE,
@@ -22,10 +30,14 @@ const SCENARIO_LABELS: Record<ScenarioName, string> = {
 
 export function FlightPlanPanel(props: {
   state: SimState;
+  /** undefined = still fetching, null = unavailable (ship without dataset / fetch failed). */
+  live: LiveDatasetMeta | null | undefined;
   onChange: (patch: Partial<SimState>) => void;
 }) {
-  const { state, onChange } = props;
+  const { state, live, onChange } = props;
   const continuous = state.model === "continuous";
+  const epochLive = state.model === "epoch-live";
+  const seedable = !epochLive; // recorded history has no seed to turn
   const scenario = SCENARIOS[state.scenario](state.seed);
   const kappa = (Number(scenario.kappaWad) / 1e18) * (state.kappaPct / 100);
   const lagSec =
@@ -33,6 +45,9 @@ export function FlightPlanPanel(props: {
       ? Math.max(1, Math.round((scenario.crowd.lagSteps * state.crowdLagPct) / 100)) *
         Number(scenario.stepSec)
       : null;
+
+  const liveDate =
+    live != null ? new Date(live.lastEpochStart * 1000).toISOString().slice(0, 10) : null;
 
   return (
     <section className="panel">
@@ -43,12 +58,29 @@ export function FlightPlanPanel(props: {
           <button
             type="button"
             className="segment"
-            aria-pressed={!continuous}
+            aria-pressed={state.model === "epoch"}
             onClick={() => onChange({ model: "epoch" })}
           >
-            <span className="seg-name">Aerodrome v2</span>
+            <span className="seg-name">Aerodrome v2 · synthetic</span>
             <span className="seg-sub">
               weekly epochs · {EPOCH_DATASET_SHAPE.pools} pools × {EPOCH_DATASET_SHAPE.epochs} wk
+            </span>
+          </button>
+          <button
+            type="button"
+            className="segment"
+            aria-pressed={epochLive}
+            disabled={live == null}
+            title={live == null ? "historical dataset unavailable" : undefined}
+            onClick={() => onChange({ model: "epoch-live" })}
+          >
+            <span className="seg-name">Aerodrome v2 · historical</span>
+            <span className="seg-sub">
+              {live == null
+                ? live === undefined
+                  ? "loading dataset…"
+                  : "dataset unavailable"
+                : `live data · ${live.pools} pools × ${live.epochs} wk · to ${liveDate}`}
             </span>
           </button>
           <button
@@ -61,6 +93,12 @@ export function FlightPlanPanel(props: {
             <span className="seg-sub">continuous · per-second streams</span>
           </button>
         </div>
+        {epochLive && live?.stale ? (
+          <div className="help stale" role="status">
+            Dataset is stale — newest epoch ended {liveDate}; the weekly data.yml run may have
+            failed. Results reflect the last-published JSON (plan §9.4).
+          </div>
+        ) : null}
       </div>
 
       <div className={`field${continuous ? "" : " disabled"}`}>
@@ -79,7 +117,7 @@ export function FlightPlanPanel(props: {
         </select>
       </div>
 
-      <div className="field">
+      <div className={`field${seedable ? "" : " disabled"}`}>
         <label htmlFor="seed">Seed</label>
         <div className="seed-row">
           <input
@@ -88,6 +126,7 @@ export function FlightPlanPanel(props: {
             min={0}
             step={1}
             value={state.seed}
+            disabled={!seedable}
             onChange={(e) => {
               const n = Math.max(0, Math.round(Number(e.target.value)));
               if (Number.isFinite(n)) onChange({ seed: n });
@@ -96,12 +135,17 @@ export function FlightPlanPanel(props: {
           <button
             type="button"
             className="reroll"
+            disabled={!seedable}
             onClick={() => onChange({ seed: Math.floor(Math.random() * 100_000) })}
           >
             Reroll
           </button>
         </div>
-        <div className="help">Every run is seed-deterministic — share the URL to reproduce it.</div>
+        <div className="help">
+          {seedable
+            ? "Every run is seed-deterministic — share the URL to reproduce it."
+            : "Recorded history — there is nothing to seed; the URL still reproduces the run."}
+        </div>
       </div>
 
       <div className="field">

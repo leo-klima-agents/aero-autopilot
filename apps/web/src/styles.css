@@ -671,3 +671,17 @@ input[type="range"] {
   color: var(--text-muted);
   text-align: center;
 }
+
+/* three protocol segments stack; the historical one can be unavailable */
+.segments {
+  grid-template-columns: 1fr;
+}
+
+.segment:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.field .help.stale {
+  color: var(--status-warning);
+}

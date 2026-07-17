@@ -72,6 +72,25 @@ export function makeClient(rpcUrl: string, opts: ClientOptions = {}) {
 export type IndexerClient = ReturnType<typeof makeClient>;
 
 /**
+ * Global request pacer: awaits long enough between request starts to stay
+ * under a requests-per-second budget. Provider rate caps (e.g. QuickNode's
+ * 50 rps entry tier) count every JSON-RPC call, and viem retries add bursts,
+ * so the default budget stays well under typical caps.
+ */
+export class Pacer {
+  private nextSlot = 0;
+  constructor(private readonly rps: number) {}
+
+  async tick(): Promise<void> {
+    const interval = 1000 / this.rps;
+    const now = Date.now();
+    const wait = this.nextSlot - now;
+    this.nextSlot = Math.max(now, this.nextSlot) + interval;
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  }
+}
+
+/**
  * Fail fast, loudly, and with a diagnosis BEFORE the long crawl starts: a
  * wrong secret, a non-Base endpoint, or a provider that can't serve the
  * indexer should die here, not 40 minutes in.
@@ -97,13 +116,16 @@ export async function preflight(client: IndexerClient, log: (msg: string) => voi
 }
 
 /** Binary-search the last block with timestamp < ts. */
-export async function blockBefore(client: IndexerClient, ts: bigint): Promise<bigint> {
+export async function blockBefore(client: IndexerClient, ts: bigint, pacer?: Pacer): Promise<bigint> {
+  await pacer?.tick();
   let hi = await client.getBlockNumber();
   let lo = 1n;
+  await pacer?.tick();
   const latest = await client.getBlock({ blockNumber: hi });
   if (latest.timestamp < ts) return hi;
   while (lo < hi) {
     const mid = (lo + hi + 1n) / 2n;
+    await pacer?.tick();
     const b = await client.getBlock({ blockNumber: mid });
     if (b.timestamp < ts) lo = mid;
     else hi = mid - 1n;
@@ -112,23 +134,24 @@ export async function blockBefore(client: IndexerClient, ts: bigint): Promise<bi
 }
 
 /** Top-N live pools by current vote weight, with their reward contracts. */
-export async function discoverTopPools(client: IndexerClient, n: number): Promise<RawPoolMeta[]> {
+export async function discoverTopPools(client: IndexerClient, n: number, pacer?: Pacer): Promise<RawPoolMeta[]> {
   const voter = { address: AERODROME.voter as Address, abi: voterAbi } as const;
+  await pacer?.tick();
   const length = await client.readContract({ ...voter, functionName: "length" });
   const count = Number(length);
   const idx = Array.from({ length: count }, (_, i) => BigInt(i));
 
-  const pools = (await multicallChunked(client, idx.map((i) => ({ ...voter, functionName: "pools", args: [i] as const })))) as Address[];
-  const weights = (await multicallChunked(client, pools.map((p) => ({ ...voter, functionName: "weights", args: [p] as const })))) as bigint[];
+  const pools = (await multicallChunked(client, idx.map((i) => ({ ...voter, functionName: "pools", args: [i] as const })), pacer)) as Address[];
+  const weights = (await multicallChunked(client, pools.map((p) => ({ ...voter, functionName: "weights", args: [p] as const })), pacer)) as bigint[];
 
   const ranked = pools
     .map((pool, i) => ({ pool, weight: weights[i] ?? 0n }))
     .sort((a, b) => (b.weight > a.weight ? 1 : b.weight < a.weight ? -1 : 0))
     .slice(0, n);
 
-  const gauges = (await multicallChunked(client, ranked.map((r) => ({ ...voter, functionName: "gauges", args: [r.pool] as const })))) as Address[];
-  const fees = (await multicallChunked(client, gauges.map((g) => ({ ...voter, functionName: "gaugeToFees", args: [g] as const })))) as Address[];
-  const bribes = (await multicallChunked(client, gauges.map((g) => ({ ...voter, functionName: "gaugeToBribe", args: [g] as const })))) as Address[];
+  const gauges = (await multicallChunked(client, ranked.map((r) => ({ ...voter, functionName: "gauges", args: [r.pool] as const })), pacer)) as Address[];
+  const fees = (await multicallChunked(client, gauges.map((g) => ({ ...voter, functionName: "gaugeToFees", args: [g] as const })), pacer)) as Address[];
+  const bribes = (await multicallChunked(client, gauges.map((g) => ({ ...voter, functionName: "gaugeToBribe", args: [g] as const })), pacer)) as Address[];
 
   return ranked.map((r, i) => ({
     pool: r.pool,
@@ -138,16 +161,27 @@ export async function discoverTopPools(client: IndexerClient, n: number): Promis
   }));
 }
 
+/**
+ * One aggregate3 request per chunk, strictly sequential and paced. The large
+ * batchSize is deliberate: viem's default (1,024 bytes of calldata) silently
+ * splits a chunk into dozens of sub-batches fired CONCURRENTLY via
+ * Promise.allSettled — a burst that blows per-second provider caps (observed:
+ * QuickNode 50 rps during pool discovery). 300 simple reads ≈ 45 KB of
+ * calldata, comfortably below eth_call limits.
+ */
 async function multicallChunked(
   client: IndexerClient,
   contracts: readonly { address: Address; abi: typeof voterAbi; functionName: string; args?: readonly unknown[] }[],
+  pacer?: Pacer,
   chunk = 300,
 ): Promise<unknown[]> {
   const out: unknown[] = [];
   for (let i = 0; i < contracts.length; i += chunk) {
+    await pacer?.tick();
     const res = await client.multicall({
       contracts: contracts.slice(i, i + chunk) as never,
       allowFailure: false,
+      batchSize: 2 ** 20,
     });
     out.push(...(res as unknown[]));
   }
@@ -167,11 +201,13 @@ async function getLogsChunked<TEvent extends typeof notifyRewardEvent | typeof d
   event: TEvent,
   fromBlock: bigint,
   toBlock: bigint,
-  span = 9_000n,
+  span: bigint,
+  pacer?: Pacer,
 ) {
   const out = [];
   for (let from = fromBlock; from <= toBlock; from += span + 1n) {
     const to = from + span > toBlock ? toBlock : from + span;
+    await pacer?.tick();
     out.push(...(await client.getLogs({ address: addresses, event, fromBlock: from, toBlock: to })));
   }
   return out;
@@ -187,6 +223,12 @@ export interface IndexOptions {
    * scans infeasible — data.yml must use a Growth/PAYG key).
    */
   logSpan?: bigint;
+  /**
+   * Requests-per-second budget across ALL JSON-RPC calls (default 15 —
+   * conservative under common entry-tier caps like QuickNode's 50 rps,
+   * leaving headroom for viem's automatic retries).
+   */
+  rps?: number;
   /** Transport tuning (see ClientOptions). */
   client?: ClientOptions;
   /** Progress callback. */
@@ -196,10 +238,11 @@ export interface IndexOptions {
 export async function indexAerodrome(opts: IndexOptions): Promise<RawDataset> {
   const client = makeClient(opts.rpcUrl, opts.client ?? {});
   const log = opts.onProgress ?? (() => {});
+  const pacer = new Pacer(opts.rps ?? 15);
 
   await preflight(client, log);
   log(`discovering top ${opts.topPools} pools…`);
-  const pools = await discoverTopPools(client, opts.topPools);
+  const pools = await discoverTopPools(client, opts.topPools, pacer);
   const rewardToPool = new Map<string, Address>();
   for (const p of pools) {
     rewardToPool.set(p.feesReward.toLowerCase(), p.pool);
@@ -208,6 +251,7 @@ export async function indexAerodrome(opts: IndexOptions): Promise<RawDataset> {
   const gaugeToPoolIdx = new Map<string, number>();
   pools.forEach((p, i) => gaugeToPoolIdx.set(p.gauge.toLowerCase(), i));
 
+  await pacer.tick();
   const latest = await client.getBlock();
   const currentEpoch = epochStart(latest.timestamp);
 
@@ -216,8 +260,8 @@ export async function indexAerodrome(opts: IndexOptions): Promise<RawDataset> {
     const start = currentEpoch - BigInt(e) * EPOCH_SECONDS;
     const end = start + EPOCH_SECONDS;
     log(`epoch ${start} (${new Date(Number(start) * 1000).toISOString().slice(0, 10)})…`);
-    const startBlock = (await blockBefore(client, start)) + 1n;
-    const endBlock = await blockBefore(client, end);
+    const startBlock = (await blockBefore(client, start, pacer)) + 1n;
+    const endBlock = await blockBefore(client, end, pacer);
 
     const votes = (await multicallChunked(
       client,
@@ -228,12 +272,13 @@ export async function indexAerodrome(opts: IndexOptions): Promise<RawDataset> {
         args: [p.pool] as const,
         blockNumber: endBlock,
       })),
+      pacer,
     )) as bigint[];
 
     const span = opts.logSpan ?? 9_000n;
     const rewardAddrs = pools.flatMap((p) => [p.feesReward, p.bribeReward]);
     const notifyLogs =
-      await getLogsChunked(client, rewardAddrs, notifyRewardEvent, startBlock, endBlock, span);
+      await getLogsChunked(client, rewardAddrs, notifyRewardEvent, startBlock, endBlock, span, pacer);
     const rewards: RawRewardEvent[] = notifyLogs.map((l) => ({
       pool: rewardToPool.get(l.address.toLowerCase())!,
       token: l.args.reward!,
@@ -247,6 +292,7 @@ export async function indexAerodrome(opts: IndexOptions): Promise<RawDataset> {
       startBlock,
       endBlock,
       span,
+      pacer,
     );
     const emissions = pools.map(() => 0n);
     for (const l of distLogs) {

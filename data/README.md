@@ -58,5 +58,10 @@ crawl and prints a diagnosis, so most misconfigurations fail in seconds:
 - **`eth_getLogs` range errors mid-run** — provider tier caps the block range
   (free Alchemy: 10 blocks). Use a paid tier or shrink `--span` to the cap
   (a full epoch is ~302,400 Base blocks, so tiny spans are impractically slow).
+- **"N/second request limit reached"** — the provider caps requests per
+  second (e.g. QuickNode entry tiers at 50 rps). All indexer requests run
+  sequentially under a pacer budgeted at `--rps` (default 15); lower it to
+  match a stricter cap. Multicalls are sent as ONE aggregate3 request per
+  300-call chunk precisely so the budget holds.
 - Reproduce locally with a small slice before burning CI minutes:
   `BASE_RPC_URL=… pnpm --filter @aero-poc/core index-data -- --pools 3 --epochs 1`.

@@ -15,6 +15,9 @@ on:
       epochs:
         description: "trailing epochs"
         default: "52"
+      rps:
+        description: "requests/second budget (stay under the provider cap)"
+        default: "15"
 
 jobs:
   index:
@@ -34,6 +37,7 @@ jobs:
           pnpm --filter @aero-poc/core index-data --
           --pools ${{ inputs.pools || '30' }}
           --epochs ${{ inputs.epochs || '52' }}
+          --rps ${{ inputs.rps || '15' }}
           --out ../../data/aerodrome-raw.json
         env:
           # The indexer's ONLY endpoint — multicalls, block search, and

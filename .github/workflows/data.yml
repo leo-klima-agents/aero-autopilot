@@ -17,13 +17,13 @@ on:
         default: "52"
       rps:
         description: "requests/second budget (stay under the provider cap)"
-        default: "15"
+        default: "40"
       span:
         description: "eth_getLogs blocks per query (10000 = QuickNode paid-plan limit)"
         default: "10000"
       concurrency:
         description: "log-scan requests in flight at once (rps budget still applies)"
-        default: "5"
+        default: "20"
 
 jobs:
   index:
@@ -43,9 +43,9 @@ jobs:
           pnpm --filter @aero-poc/core index-data --
           --pools ${{ inputs.pools || '30' }}
           --epochs ${{ inputs.epochs || '52' }}
-          --rps ${{ inputs.rps || '15' }}
+          --rps ${{ inputs.rps || '40' }}
           --span ${{ inputs.span || '10000' }}
-          --concurrency ${{ inputs.concurrency || '5' }}
+          --concurrency ${{ inputs.concurrency || '20' }}
           --out ../../data/aerodrome-raw.json
         env:
           # The indexer's ONLY endpoint — multicalls, block search, and

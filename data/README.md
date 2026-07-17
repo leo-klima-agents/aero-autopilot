@@ -53,7 +53,7 @@ crawl and prints a diagnosis, so most misconfigurations fail in seconds:
   runners. The indexer never uses JSON-RPC array batching (a classic
   silent-hang cause on some providers/gateways, and batch items count against
   rate caps individually anyway); latency is overlapped with bounded chunk
-  concurrency instead (`--concurrency`, default 5), while `--rps` remains the
+  concurrency instead (`--concurrency`, default 20 ≈ rps × typical latency), while `--rps` remains the
   hard ceiling on request starts.
 - **`preflight: … chain X, expected Base (8453)`** — the secret points at the
   wrong network.
@@ -66,7 +66,7 @@ crawl and prints a diagnosis, so most misconfigurations fail in seconds:
   `concurrency`, and `rps` are all settable from the data.yml Run-workflow menu.
 - **"N/second request limit reached"** — the provider caps requests per
   second (e.g. QuickNode entry tiers at 50 rps). Every request start is
-  reserved through a shared pacer budgeted at `--rps` (default 15) — including
+  reserved through a shared pacer budgeted at `--rps` (default 40, sized for QuickNode’s 50 rps cap with retry headroom) — including
   the concurrent log-scan workers — so lower `--rps` to match a stricter cap.
   Multicalls are sent as ONE aggregate3 request per 300-call chunk precisely
   so the budget holds.

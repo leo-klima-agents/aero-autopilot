@@ -263,15 +263,17 @@ export interface IndexOptions {
    */
   logSpan?: bigint;
   /**
-   * Requests-per-second budget across ALL JSON-RPC calls (default 15 —
-   * conservative under common entry-tier caps like QuickNode's 50 rps,
-   * leaving headroom for viem's automatic retries).
+   * Requests-per-second budget across ALL JSON-RPC calls (default 40 —
+   * sized for QuickNode's 50 rps entry cap with headroom for viem's
+   * automatic retries, which bypass the pacer; lower it for stricter
+   * providers).
    */
   rps?: number;
   /**
-   * Log-scan requests in flight at once (default 5). Overlaps round-trip
-   * latency without touching the rps ceiling — the Pacer still spaces every
-   * request start.
+   * Log-scan requests in flight at once (default 20 ≈ rps × typical getLogs
+   * latency, the Little's-law saturation point). Overlaps round-trip latency
+   * without touching the rps ceiling — the Pacer still spaces every request
+   * start, so higher values cannot breach the budget.
    */
   concurrency?: number;
   /** Transport tuning (see ClientOptions). */
@@ -283,7 +285,7 @@ export interface IndexOptions {
 export async function indexAerodrome(opts: IndexOptions): Promise<RawDataset> {
   const client = makeClient(opts.rpcUrl, opts.client ?? {});
   const log = opts.onProgress ?? (() => {});
-  const pacer = new Pacer(opts.rps ?? 15);
+  const pacer = new Pacer(opts.rps ?? 40);
 
   await preflight(client, log);
   log(`discovering top ${opts.topPools} pools…`);
@@ -324,7 +326,7 @@ export async function indexAerodrome(opts: IndexOptions): Promise<RawDataset> {
     const rewardAddrs = pools.flatMap((p) => [p.feesReward, p.bribeReward]);
     const notifyLogs =
       await getLogsChunked(
-        client, rewardAddrs, notifyRewardEvent, startBlock, endBlock, span, pacer, opts.concurrency ?? 5
+        client, rewardAddrs, notifyRewardEvent, startBlock, endBlock, span, pacer, opts.concurrency ?? 20
       );
     const rewards: RawRewardEvent[] = notifyLogs.map((l) => ({
       pool: rewardToPool.get(l.address.toLowerCase())!,
@@ -340,7 +342,7 @@ export async function indexAerodrome(opts: IndexOptions): Promise<RawDataset> {
       endBlock,
       span,
       pacer,
-      opts.concurrency ?? 5,
+      opts.concurrency ?? 20,
     );
     const emissions = pools.map(() => 0n);
     for (const l of distLogs) {

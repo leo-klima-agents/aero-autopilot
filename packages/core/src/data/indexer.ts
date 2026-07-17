@@ -195,6 +195,8 @@ const distributeRewardEvent = parseAbiItem(
   "event DistributeReward(address indexed sender, address indexed gauge, uint256 amount)",
 );
 
+/** @param span blocks per query (from..to inclusive), matching how providers
+ * document their eth_getLogs range limits: span 10000 = a 10,000-block query. */
 async function getLogsChunked<TEvent extends typeof notifyRewardEvent | typeof distributeRewardEvent>(
   client: IndexerClient,
   addresses: Address[],
@@ -204,9 +206,10 @@ async function getLogsChunked<TEvent extends typeof notifyRewardEvent | typeof d
   span: bigint,
   pacer?: Pacer,
 ) {
+  if (span < 1n) throw new Error("logSpan must be ≥ 1 block");
   const out = [];
-  for (let from = fromBlock; from <= toBlock; from += span + 1n) {
-    const to = from + span > toBlock ? toBlock : from + span;
+  for (let from = fromBlock; from <= toBlock; from += span) {
+    const to = from + span - 1n > toBlock ? toBlock : from + span - 1n;
     await pacer?.tick();
     out.push(...(await client.getLogs({ address: addresses, event, fromBlock: from, toBlock: to })));
   }
@@ -218,8 +221,8 @@ export interface IndexOptions {
   topPools: number;
   epochs: number;
   /**
-   * eth_getLogs block-range chunk, INCLUSIVE (span+1 blocks per query).
-   * Default 9999 = exactly the 10,000-block limit QuickNode documents for
+   * eth_getLogs chunk in BLOCKS PER QUERY, matching how providers document
+   * their range limits. Default 10000 = the limit QuickNode documents for
    * paid plans. Requires a paid RPC tier either way (QuickNode free trial:
    * 5 blocks; Alchemy free: 10 — both make full-epoch scans infeasible).
    */
@@ -276,7 +279,7 @@ export async function indexAerodrome(opts: IndexOptions): Promise<RawDataset> {
       pacer,
     )) as bigint[];
 
-    const span = opts.logSpan ?? 9_999n;
+    const span = opts.logSpan ?? 10_000n;
     const rewardAddrs = pools.flatMap((p) => [p.feesReward, p.bribeReward]);
     const notifyLogs =
       await getLogsChunked(client, rewardAddrs, notifyRewardEvent, startBlock, endBlock, span, pacer);

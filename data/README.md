@@ -57,11 +57,11 @@ crawl and prints a diagnosis, so most misconfigurations fail in seconds:
   wrong network.
 - **`eth_getLogs` range errors mid-run** — provider tier caps the block range
   (QuickNode paid plans: 10,000 blocks; QuickNode free trial: 5; free Alchemy:
-  10). The default `--span 9999` queries exactly 10,000 blocks (chunks are
-  inclusive), matching QuickNode's documented paid-plan limit — shrink it to
-  your provider's cap, noting a full epoch is ~302,400 Base blocks, so
-  free-tier spans are impractically slow. Both `span` and `batch` are
-  settable from the data.yml Run-workflow menu.
+  10). `--span` is denominated in blocks per query, exactly as providers
+  document their limits: the default `--span 10000` matches QuickNode's
+  paid-plan cap — set it to your provider's number, noting a full epoch is
+  ~302,400 Base blocks, so free-tier spans are impractically slow. Both
+  `span` and `batch` are settable from the data.yml Run-workflow menu.
 - **"N/second request limit reached"** — the provider caps requests per
   second (e.g. QuickNode entry tiers at 50 rps). All indexer requests run
   sequentially under a pacer budgeted at `--rps` (default 15); lower it to
